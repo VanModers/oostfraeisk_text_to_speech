@@ -1,13 +1,14 @@
 import whisperx
-import torchaudio
 import os
 from pathlib import Path
+import torchaudio
+import torch
 
 # -----------------------------
-# CONFIGURATION
+# CONFIG
 # -----------------------------
-INPUT_DIR = Path("long_recordings")       # folder with .wav/.mp3 + .txt files
-OUTPUT_DIR = Path("data/oostfraeisk")     # dataset folder
+INPUT_DIR = Path("long_recordings")       # .wav/.mp3 + .txt
+OUTPUT_DIR = Path("data/oostfraeisk")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 (OUTPUT_DIR / "wavs").mkdir(parents=True, exist_ok=True)
 
@@ -17,11 +18,10 @@ metadata_path = OUTPUT_DIR / "metadata.csv"
 # LOAD MODELS
 # -----------------------------
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model = whisperx.load_model("small", device)  # try "medium" for better alignment
 align_model, metadata = whisperx.load_align_model(language_code="de", device=device)
 
 # -----------------------------
-# PROCESS ALL FILES
+# PROCESS FILES
 # -----------------------------
 with open(metadata_path, "w", encoding="utf-8") as f_meta:
     for audio_file in INPUT_DIR.glob("*"):
@@ -35,32 +35,42 @@ with open(metadata_path, "w", encoding="utf-8") as f_meta:
 
         print(f"🎙️ Processing {audio_file.name}...")
 
-        # Load audio + transcript
-        audio, sr = torchaudio.load(audio_file)
+        # Load transcript
         transcript = transcript_file.read_text(encoding="utf-8")
 
-        # Run WhisperX transcription/alignment
-        result = model.transcribe(audio, language="de")  # use German for alignment
+        # Split transcript into pseudo-sentences (simple split, can be improved)
+        segments = [
+            {"text": s.strip(), "start": 0.0, "end": 0.0}
+            for s in transcript.replace("?", ".").replace("!", ".").split(".")
+            if s.strip()
+        ]
+
+        waveform, sr = torchaudio.load(audio_file)
+        waveform = waveform.to(device)
+
         aligned = whisperx.align(
-            result["segments"], align_model, metadata, audio, sr, device
+            segments, align_model, metadata, waveform, sr, device
         )
+
+        # Reload audio on CPU just for slicing/export
+        audio, sr = torchaudio.load(audio_file)
 
         # Export aligned clips + metadata
         base_id = audio_file.stem
         for i, seg in enumerate(aligned["segments"]):
+            if "start" not in seg or "end" not in seg:
+                continue  # skip unaligned
+
             start, end = seg["start"], seg["end"]
             text = seg["text"].strip()
             clip_name = f"{base_id}_{i:03d}.wav"
 
-            # Save audio segment
             torchaudio.save(
                 OUTPUT_DIR / "wavs" / clip_name,
                 audio[:, int(start * sr):int(end * sr)],
                 sr,
             )
 
-            # Write metadata entry
             f_meta.write(f"{clip_name}|{text}\n")
 
-print("✅ All recordings processed!")
-print(f"Output in: {OUTPUT_DIR}")
+print("✅ Done! Dataset in", OUTPUT_DIR)
