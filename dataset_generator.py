@@ -26,7 +26,9 @@ def split_sentences(text):
             # Break into chunks
             for i in range(0, len(words), MAX_WORDS):
                 chunk = " ".join(words[i:i+MAX_WORDS])
-                processed.append(chunk)
+                chunks = chunk.split('|')
+                for c in chunks:
+                    processed.append(c.strip())
         else:
             processed.append(s)
     return processed
@@ -40,7 +42,7 @@ def record_sentence(sentence, filename):
     print(f"\nPlease read aloud:\n>>> {sentence}")
     input("Press ENTER when ready to record...")
     
-    duration = max(3, len(sentence.split()) // 2 + 1)  # rough guess
+    duration = max(3, len(sentence.split()) // 2 + 2)  # rough guess
     print(f"Recording... (approx {duration} seconds)")
     recording = sd.rec(int(duration * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=CHANNELS)
     sd.wait()  # Wait until recording is finished
@@ -67,16 +69,16 @@ def main():
     metadata_path = os.path.join(OUTPUT_DIR, "metadata.csv")
     with open(metadata_path, "a", encoding="utf-8") as meta:
         for i, sentence in enumerate(sentences, 1):
-            filename = f"sentence_{i:04d}.wav"
-            filepath = os.path.join(OUTPUT_DIR, filename)
+            filename = f"sentence_{i:04d}"
+            filepath = os.path.join(OUTPUT_DIR, f"wavs/sentence_{i:04d}.wav")
 
             # Skip if already recorded
             if os.path.exists(filepath):
-                print(f"Skipping already recorded: {filename}")
+                print(f"Skipping already recorded: {filename}, {sentence}")
                 continue
 
             record_sentence(sentence, filepath)
-            meta.write(f"{filename}|{sentence}\n")
+            meta.write(f"{filename}|{sentence}|speaker\n")
 
     print("\n✅ Recording session complete!")
     print(f"Metadata file: {metadata_path}")
