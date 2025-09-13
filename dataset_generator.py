@@ -10,13 +10,12 @@ TEXT_FILE = "texts/rec0.txt"   # Your input text file
 OUTPUT_DIR = "data/oostfraeisk"                # Where recordings and metadata.csv will be saved
 SAMPLE_RATE = 22050                      # Sample rate for recording (Hz)
 CHANNELS = 1                             # Mono audio
-MAX_WORDS = 15                           # Maximum words per segment
+MAX_WORDS = 25                           # Maximum words per segment
 # -------------------------
 
 def split_sentences(text):
     """Split into sentences, then break long ones into shorter phrases."""
-    sentences = re.split(r'(?<=[.!?])+', text.strip())
-    print(sentences)
+    sentences = re.split(r'(?<=[\n])+', text.strip())
     processed = []
     for s in sentences:
         s = s.strip()
@@ -41,7 +40,7 @@ def record_sentence(sentence, filename):
     print(f"\nPlease read aloud:\n>>> {sentence}")
     input("Press ENTER when ready to record...")
     
-    duration = max(3, len(sentence.split()) // 2 + 2)  # rough guess
+    duration = max(3, len(sentence.split()) // 1.5 + 2)  # rough guess
     print(f"Recording... (approx {duration} seconds)")
     recording = sd.rec(int(duration * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=CHANNELS)
     sd.wait()  # Wait until recording is finished
@@ -102,7 +101,7 @@ def main():
                 continue
 
             record_sentence(sentence, filepath)
-            meta.write(f"{filename}|{sentence}|speaker\n")
+            meta.write(f"{filename}|{sentence}|{sentence}\n")
             sentence_num += 1
 
     print("\n✅ Recording session complete!")
