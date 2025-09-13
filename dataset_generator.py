@@ -15,7 +15,8 @@ MAX_WORDS = 15                           # Maximum words per segment
 
 def split_sentences(text):
     """Split into sentences, then break long ones into shorter phrases."""
-    sentences = re.split(r'(?<=[.!?]) +', text.strip())
+    sentences = re.split(r'(?<=[.!?])+', text.strip())
+    print(sentences)
     processed = []
     for s in sentences:
         s = s.strip()
@@ -26,9 +27,7 @@ def split_sentences(text):
             # Break into chunks
             for i in range(0, len(words), MAX_WORDS):
                 chunk = " ".join(words[i:i+MAX_WORDS])
-                chunks = chunk.split('|')
-                for c in chunks:
-                    processed.append(c.strip())
+                processed.append(chunk.strip())
         else:
             processed.append(s)
     return processed
@@ -57,8 +56,25 @@ def record_sentence(sentence, filename):
     sf.write(filename, recording, SAMPLE_RATE)
     print(f"Saved recording: {filename}")
 
+def load_existing_metadata(metadata_path):
+    """Load sentences and last index from metadata.csv if it exists."""
+    existing_sentences = set()
+    last_index = 0
+    if os.path.exists(metadata_path):
+        with open(metadata_path, "r", encoding="utf-8") as meta:
+            for line in meta:
+                parts = line.strip().split("|")
+                if len(parts) >= 2:
+                    existing_sentences.add(parts[1])
+                    # Extract index from filename (e.g., sentence_0005)
+                    match = re.match(r"sentence_(\d+)", parts[0])
+                    if match:
+                        idx = int(match.group(1))
+                        last_index = max(last_index, idx)
+    return existing_sentences, last_index
+
 def main():
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(os.path.join(OUTPUT_DIR, "wavs"), exist_ok=True)
 
     # Read input text
     with open(TEXT_FILE, "r", encoding="utf-8") as f:
@@ -67,18 +83,27 @@ def main():
     sentences = split_sentences(text)
 
     metadata_path = os.path.join(OUTPUT_DIR, "metadata.csv")
+    existing_sentences, last_index = load_existing_metadata(metadata_path)
+
     with open(metadata_path, "a", encoding="utf-8") as meta:
-        for i, sentence in enumerate(sentences, 1):
-            filename = f"sentence_{i:04d}"
-            filepath = os.path.join(OUTPUT_DIR, f"wavs/sentence_{i:04d}.wav")
+        sentence_num = last_index + 1
+        for sentence in sentences:
+            if sentence in existing_sentences:
+                print(f"Skipping already in metadata: {sentence}")
+                continue
+
+            filename = f"sentence_{sentence_num:04d}"
+            filepath = os.path.join(OUTPUT_DIR, f"wavs/{filename}.wav")
 
             # Skip if already recorded
             if os.path.exists(filepath):
                 print(f"Skipping already recorded: {filename}, {sentence}")
+                sentence_num += 1
                 continue
 
             record_sentence(sentence, filepath)
             meta.write(f"{filename}|{sentence}|speaker\n")
+            sentence_num += 1
 
     print("\n✅ Recording session complete!")
     print(f"Metadata file: {metadata_path}")
