@@ -31,7 +31,7 @@ def split_sentences(text):
             processed.append(s)
     return processed
 
-def trim_silence(audio, top_db=30):
+def trim_silence(audio, top_db=35):
     """Trim trailing silence from audio using librosa."""
     trimmed, _ = librosa.effects.trim(audio, top_db=top_db)
     return trimmed
