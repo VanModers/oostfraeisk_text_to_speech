@@ -4,6 +4,7 @@ import sounddevice as sd
 import soundfile as sf
 import librosa
 import numpy as np
+import winsound
 
 # -------- CONFIG --------
 TEXT_FILE = "texts/rec0.txt"   # Your input text file
@@ -42,6 +43,7 @@ def record_sentence(sentence, filename):
     
     duration = max(3, len(sentence.split()) // 1.5 + 2)  # rough guess
     print(f"Recording... (approx {duration} seconds)")
+    winsound.Beep(1000,500)
     recording = sd.rec(int(duration * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=CHANNELS)
     sd.wait()  # Wait until recording is finished
     
