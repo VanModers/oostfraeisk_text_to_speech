@@ -37,7 +37,7 @@ for idx, row in metadata.iterrows():
 
     pro = 0.9 # noise reduction aggressiveness
 
-    if idx in range(301, 401) or idx in range(501, 601) or idx in range(651, 680):  # Example indices for less aggressive reduction
+    if idx in range(301, 401) or idx in range(501, 601) or idx in range(651, 1000):  # Example indices for less aggressive reduction
         pro = 0.4
 
     # Reduce noise
