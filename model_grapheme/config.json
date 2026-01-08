@@ -1,0 +1,275 @@
+{
+    "output_path": "tts_train_dir_grapheme",
+    "logger_uri": null,
+    "run_name": "vits-0.6.1-Thorsten-DE",
+    "project_name": null,
+    "run_description": "\ud83d\udc38Coqui trainer run.",
+    "print_step": 100,
+    "plot_step": 100,
+    "model_param_stats": false,
+    "wandb_entity": null,
+    "dashboard_logger": "tensorboard",
+    "save_on_interrupt": true,
+    "log_model_step": 1000,
+    "save_step": 500,
+    "save_n_checkpoints": 5,
+    "save_checkpoints": true,
+    "save_all_best": true,
+    "save_best_after": 1000,
+    "target_loss": null,
+    "print_eval": true,
+    "test_delay_epochs": -1,
+    "run_eval": true,
+    "run_eval_steps": null,
+    "distributed_backend": "nccl",
+    "distributed_url": "tcp://localhost:54321",
+    "mixed_precision": true,
+    "precision": "fp16",
+    "epochs": 100,
+    "batch_size": 8,
+    "eval_batch_size": 16,
+    "grad_clip": [
+        1000.0,
+        1000.0
+    ],
+    "scheduler_after_epoch": true,
+    "lr": 0.001,
+    "optimizer": "AdamW",
+    "optimizer_params": {
+        "betas": [
+            0.8,
+            0.99
+        ],
+        "eps": 1e-09,
+        "weight_decay": 0.01
+    },
+    "lr_scheduler": "",
+    "lr_scheduler_params": null,
+    "use_grad_scaler": false,
+    "allow_tf32": false,
+    "cudnn_enable": true,
+    "cudnn_deterministic": false,
+    "cudnn_benchmark": true,
+    "training_seed": 54321,
+    "model": "vits",
+    "num_loader_workers": 8,
+    "num_eval_loader_workers": 4,
+    "use_noise_augment": false,
+    "audio": {
+        "fft_size": 1024,
+        "sample_rate": 22050,
+        "win_length": 1024,
+        "hop_length": 256,
+        "num_mels": 80,
+        "mel_fmin": 0,
+        "mel_fmax": null
+    },
+    "use_phonemes": false,
+    "phonemizer": "gruut",
+    "phoneme_language": "de-de",
+    "compute_input_seq_cache": true,
+    "text_cleaner": "multilingual_cleaners",
+    "enable_eos_bos_chars": false,
+    "test_sentences_file": "",
+    "phoneme_cache_path": "/home/dominik/xavier/models/Thorsten-neutral-Dec2021/phoneme_cache",
+    "characters": {
+        "characters_class": "TTS.tts.utils.text.characters.Graphemes",
+        "vocab_dict": null,
+        "pad": "<PAD>",
+        "eos": "<EOS>",
+        "bos": "<BOS>",
+        "blank": "<BLNK>",
+        "characters": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\u00c2\u00ca\u00ce\u00d4\u00db\u00e2\u00ea\u00ee\u00f4\u00fb\u00c4\u00d6\u00dc\u00e4\u00f6\u00fc\u00d3\u00f3\u011e\u011f\u00df0123456789",
+        "punctuations": "!\"'(),-.:;? \n",
+        "phonemes": null,
+        "is_unique": true,
+        "is_sorted": true
+    },
+    "add_blank": true,
+    "batch_group_size": 5,
+    "loss_masking": null,
+    "min_audio_len": 1,
+    "max_audio_len": Infinity,
+    "min_text_len": 1,
+    "max_text_len": Infinity,
+    "compute_f0": false,
+    "compute_energy": false,
+    "compute_linear_spec": true,
+    "precompute_num_workers": 0,
+    "start_by_longest": false,
+    "shuffle": false,
+    "drop_last": false,
+    "datasets": [
+        {
+            "formatter": "ljspeech",
+            "dataset_name": "",
+            "path": "data/oostfraeisk",
+            "meta_file_train": "metadata.csv",
+            "ignored_speakers": null,
+            "language": "",
+            "phonemizer": "",
+            "meta_file_val": "",
+            "meta_file_attn_mask": ""
+        }
+    ],
+    "test_sentences": [
+        [
+            "Und \u00fcberzeugen dank feingef\u00fchl f\u00fcr den ganz gro\u00dfen leinwand-stoff."
+        ],
+        [
+            "Zur schadensh\u00f6he gab es keine angaben."
+        ],
+        [
+            "Au\u00dferdem k\u00f6nnen glasscheiben, w\u00e4nde und andere hindernisse das ergebnis beeinflussen."
+        ],
+        [
+            "Ihre lippen m\u00fcssen dennoch nicht zwingend auf farbe verzichten."
+        ],
+        [
+            "Es dauert lange, eine eigene Stimme zu entwickeln, aber jetzt wo ich sie habe, bin ich nie wieder still."
+        ],
+        [
+            "Heute scheint die Sonne, Regen ist nicht zu erwarten."
+        ],
+        [
+            "Die aktuelle Au\u00dfentemperatur betr\u00e4gt zw\u00f6lf Grad Celsius bei einer Luftfeuchtigkeit von achtunddrei\u00dfig Prozent."
+        ]
+    ],
+    "eval_split_max_size": null,
+    "eval_split_size": 0.01,
+    "use_speaker_weighted_sampler": false,
+    "speaker_weighted_sampler_alpha": 1.0,
+    "use_language_weighted_sampler": false,
+    "language_weighted_sampler_alpha": 1.0,
+    "use_length_weighted_sampler": false,
+    "length_weighted_sampler_alpha": 1.0,
+    "model_args": {
+        "num_chars": 100,
+        "out_channels": 513,
+        "spec_segment_size": 32,
+        "hidden_channels": 192,
+        "hidden_channels_ffn_text_encoder": 768,
+        "num_heads_text_encoder": 2,
+        "num_layers_text_encoder": 6,
+        "kernel_size_text_encoder": 3,
+        "dropout_p_text_encoder": 0.1,
+        "dropout_p_duration_predictor": 0.5,
+        "kernel_size_posterior_encoder": 5,
+        "dilation_rate_posterior_encoder": 1,
+        "num_layers_posterior_encoder": 16,
+        "kernel_size_flow": 5,
+        "dilation_rate_flow": 1,
+        "num_layers_flow": 4,
+        "resblock_type_decoder": "1",
+        "resblock_kernel_sizes_decoder": [
+            3,
+            7,
+            11
+        ],
+        "resblock_dilation_sizes_decoder": [
+            [
+                1,
+                3,
+                5
+            ],
+            [
+                1,
+                3,
+                5
+            ],
+            [
+                1,
+                3,
+                5
+            ]
+        ],
+        "upsample_rates_decoder": [
+            8,
+            8,
+            2,
+            2
+        ],
+        "upsample_initial_channel_decoder": 512,
+        "upsample_kernel_sizes_decoder": [
+            16,
+            16,
+            4,
+            4
+        ],
+        "periods_multi_period_discriminator": [
+            2,
+            3,
+            5,
+            7,
+            11
+        ],
+        "use_sdp": true,
+        "noise_scale": 1.0,
+        "inference_noise_scale": 0.667,
+        "length_scale": 1.0,
+        "noise_scale_dp": 1.0,
+        "inference_noise_scale_dp": 1.0,
+        "max_inference_len": null,
+        "init_discriminator": true,
+        "use_spectral_norm_disriminator": false,
+        "use_speaker_embedding": false,
+        "num_speakers": 0,
+        "speakers_file": null,
+        "d_vector_file": null,
+        "speaker_embedding_channels": 256,
+        "use_d_vector_file": false,
+        "d_vector_dim": 0,
+        "detach_dp_input": true,
+        "use_language_embedding": false,
+        "embedded_language_dim": 4,
+        "num_languages": 0,
+        "language_ids_file": null,
+        "use_speaker_encoder_as_loss": false,
+        "speaker_encoder_config_path": "",
+        "speaker_encoder_model_path": "",
+        "condition_dp_on_speaker": true,
+        "freeze_encoder": false,
+        "freeze_DP": false,
+        "freeze_PE": false,
+        "freeze_flow_decoder": false,
+        "freeze_waveform_decoder": false,
+        "encoder_sample_rate": null,
+        "interpolate_z": true,
+        "reinit_DP": false,
+        "reinit_text_encoder": false
+    },
+    "lr_gen": 0.0002,
+    "lr_disc": 0.0002,
+    "lr_scheduler_gen": "ExponentialLR",
+    "lr_scheduler_gen_params": {
+        "gamma": 0.999875,
+        "last_epoch": -1
+    },
+    "lr_scheduler_disc": "ExponentialLR",
+    "lr_scheduler_disc_params": {
+        "gamma": 0.999875,
+        "last_epoch": -1
+    },
+    "kl_loss_alpha": 1.0,
+    "disc_loss_alpha": 1.0,
+    "gen_loss_alpha": 1.0,
+    "feat_loss_alpha": 1.0,
+    "mel_loss_alpha": 45.0,
+    "dur_loss_alpha": 1.0,
+    "speaker_encoder_loss_alpha": 1.0,
+    "return_wav": true,
+    "use_weighted_sampler": false,
+    "weighted_sampler_attrs": null,
+    "weighted_sampler_multipliers": null,
+    "r": 1,
+    "num_speakers": 0,
+    "use_speaker_embedding": false,
+    "speakers_file": null,
+    "speaker_embedding_channels": 256,
+    "language_ids_file": null,
+    "use_language_embedding": false,
+    "use_d_vector_file": false,
+    "d_vector_file": null,
+    "d_vector_dim": 0,
+    "github_branch": "* main"
+}
