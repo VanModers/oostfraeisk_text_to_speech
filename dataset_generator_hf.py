@@ -91,7 +91,7 @@ def load_new_metadata(metadata_path):
 
 # Padding (in seconds) added after the trim point so that final
 # consonants (e.g. trailing 't') are not clipped.
-TAIL_PAD_SEC = 0.06
+TAIL_PAD_SEC = 0.2
 
 
 def trim_silence(audio, sr=SAMPLE_RATE, top_db=35):
