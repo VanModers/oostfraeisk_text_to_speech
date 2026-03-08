@@ -170,10 +170,10 @@ def save_recording(audio, sentence_text):
     status_msg, next_sentence, remaining_info, updated_status
     """
     if audio is None:
-        return "No audio received. Please record again.", sentence_text, "", get_status()
+        return "No audio received. Please record again.", sentence_text, "", get_status(), None
 
     if not sentence_text or sentence_text.startswith("All sentences"):
-        return "No more sentences to record.", sentence_text, "", get_status()
+        return "No more sentences to record.", sentence_text, "", get_status(), None
 
     sr_in, data = audio
 
@@ -211,7 +211,7 @@ def save_recording(audio, sentence_text):
     next_sent, remaining = get_next_sentence()
     status = get_status()
 
-    return f"Saved {filename}.wav", next_sent, remaining, status
+    return f"Saved {filename}.wav", next_sent, remaining, status, None
 
 
 def skip_sentence(sentence_text):
@@ -342,7 +342,7 @@ def build_ui():
         save_btn.click(
             fn=save_recording,
             inputs=[audio_input, sentence_box],
-            outputs=[save_msg, sentence_box, remaining_info, status_md],
+            outputs=[save_msg, sentence_box, remaining_info, status_md, audio_input],
         )
 
         skip_btn.click(
