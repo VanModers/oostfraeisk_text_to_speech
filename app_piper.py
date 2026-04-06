@@ -1,10 +1,11 @@
 import gradio as gr
 import wave
-import io
+import tempfile
+import os
 import re
-import numpy as np
 
 from piper import PiperVoice
+from huggingface_hub import hf_hub_download
 
 # =============================================================================
 # Set this to match how the model was trained:
@@ -228,7 +229,12 @@ def preprocess_east_frisian(text: str) -> str:
 # Piper uses ONNX for inference — fast on CPU, no GPU needed!
 # =============================================================================
 
-MODEL_PATH = "model.onnx"  # model.onnx.json must be alongside it
+MODEL_REPO_ID = os.environ.get("MODEL_REPO_ID", "VanModers114/East_Frisian_TTS")
+MODEL_FILENAME = os.environ.get("MODEL_FILENAME", "oostfraeisk.onnx")
+
+# Download model assets from the Hub model repo at startup.
+MODEL_PATH = hf_hub_download(repo_id=MODEL_REPO_ID, filename=MODEL_FILENAME, repo_type="model")
+hf_hub_download(repo_id=MODEL_REPO_ID, filename=f"{MODEL_FILENAME}.json", repo_type="model")
 
 voice = PiperVoice.load(MODEL_PATH)
 
@@ -245,11 +251,13 @@ def tts_fn(text):
         text = preprocess_east_frisian(text)
     
     # 3. Synthesize with Piper
-    out_path = "out.wav"
-    with wave.open(out_path, "w") as wav_file:
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    with wave.open(tmp_path, "w") as wav_file:
         voice.synthesize(text, wav_file)
-    
-    return out_path
+
+    return tmp_path
 
 
 # Gradio interface
