@@ -1,18 +1,10 @@
 import gradio as gr
-import wave
-import tempfile
 import os
 import re
+import wave
 
 from piper import PiperVoice
 from huggingface_hub import hf_hub_download
-
-# =============================================================================
-# Set this to match how the model was trained:
-#   "grapheme" = trained on raw East Frisian text (no phonemizer)
-#   "espeak"   = trained on German-preprocessed text (espeak-ng phonemizer)
-# =============================================================================
-PHONEME_MODE = "grapheme"
 
 # =============================================================================
 # East Frisian Text Normalizer
@@ -84,10 +76,47 @@ def number_to_east_frisian(n: int) -> str:
     # For very large numbers, just spell out digits
     return " ".join(ONES[int(d)] for d in str(n))
 
+
+# Letter-by-letter East Frisian pronunciation of capital letters
+LETTER_NAMES = {
+    'A': 'aa',  'B': 'bäi', 'C': 'tsäi', 'D': 'däi', 'E': 'äi',
+    'F': 'ef',  'G': 'gäi', 'H': 'haa',  'I': 'ii',  'J': 'jot',
+    'K': 'kaa', 'L': 'el',  'M': 'em',   'N': 'en',  'O': 'oo',
+    'P': 'päi', 'Q': 'kuu', 'R': 'eer',  'S': 'es',  'T': 'täi',
+    'U': 'uu',  'V': 'fau', 'W': 'wäi',  'X': 'iks', 'Y': 'üpsilon',
+    'Z': 'tset',
+}
+
+# Ordinal number forms in East Frisian
+ORDINALS = {
+    1: 'êerst',       2: 'twäied',      3: 'dâard',       4: 'fäärd',
+    5: 'fîift',       6: 'säest',       7: 'sööemt',      8: 'âacht',
+    9: 'neegent',     10: 'tâajnt',     11: 'elft',       12: 'twalf',
+    13: 'daartâajnt', 14: 'fäärtâajnt',
+}
+
+def number_to_ordinal_east_frisian(n: int) -> str:
+    if n in ORDINALS:
+        return ORDINALS[n]
+    return number_to_east_frisian(n) + 'st'
+
+
 def normalize_text(text: str) -> str:
     """
     Normalize text for TTS: convert numbers, dates, abbreviations to words.
     """
+    # Handle ordinal numbers first (e.g. "1." → "êerst", "14." → "fäärtâajnt")
+    def replace_ordinal(match):
+        return number_to_ordinal_east_frisian(int(match.group(1)))
+
+    text = re.sub(r'\b(\d+)\.(?=\s+\w)', replace_ordinal, text)
+
+    # Expand capital-letter abbreviations letter by letter (e.g. "USA" → "uu es aa")
+    def expand_abbreviation(match):
+        return ' '.join(LETTER_NAMES.get(c, c) for c in match.group(0))
+
+    text = re.sub(r'\b[A-Z]{2,}\b', expand_abbreviation, text)
+
     # Replace numbers with words (longest matches first to handle e.g. "2024" before "20")
     def replace_number(match):
         num_str = match.group(0)
@@ -155,76 +184,6 @@ def normalize_text(text: str) -> str:
 
 
 # =============================================================================
-# East Frisian → German Phoneme Preprocessing
-# Piper uses espeak-ng with German (de) for phonemization.
-# East Frisian characters/diphthongs must be converted to German-compatible
-# forms so espeak-ng can process them correctly.
-# =============================================================================
-
-custom_phoneme_map = {
-    # Complex diphthongs / triphthongs (longest first)
-    "öye": "öije",    # /œyə/ - göyen (gießen)
-    "ööe": "ööö",    # extra-long ö
-    "óóej": "ooai",  # /ɒ:ɛɪ/ - dóóejt (Tat)
-    "âau": "aau",    # /a:ʊ/ - brâau
-    "âaj": "aai",    # /a:ɪ/ - drâajen (drehen)
-    "êer": "eer",    # /e:r/ - fêert (fährt)
-    "êel": "eel",    # /e:l/ - fêelen (fühlen)
-
-    # Circumflex (extra-long) vowels
-    "ââ": "aa",      # extra-long a
-    "êê": "ee",      # extra-long e
-    "îî": "ii",      # extra-long i
-    "ôô": "oo",      # extra-long o
-    "ûû": "uu",      # extra-long u
-    "âa": "aa",      # long a - hâan (Hahn)
-    "êe": "ee",      # long e - stêen (Stein)
-    "îi": "ii",      # long i - wîin (Wein)
-    "ôo": "oo",      # extra-long o - gôoj (Wurf)
-    "ûu": "uu",      # extra-long u
-
-    # East Frisian specific long vowels and diphthongs
-    "óój": "oai",    # /ɒ:ɪ/ - swóój (Schwung)
-    "óó": "oa",      # /ɒː/ - no direct German equivalent
-    "ó": "oa",        # /ɒ/ short
-
-    # ö-diphthongs
-    "öy": "öi",      # /œy/ - böyten
-    "öej": "ööi",    # /œ:œɪ/ - möej (müde)
-    "öj": "öi",      # /œ:ɪ/ - kröjen (langsam fahren)
-
-    # ä-diphthongs
-    "äie": "ääi",    # /æ:æɪ/ - mäied (Wiese)
-    "äej": "ääi",    # /ɛ:ɛɪ/ - fräejt (Liebschaft)
-    "äj": "äi",      # /ɛ:ɪ/ - bäj (Beere)
-    "äi": "äi",      # /æɪ/ - bäist (Rind)
-
-    # Basic diphthongs
-    "ooj": "ooi",    # /o:ɪ/ - mooj (schön)
-    "oi": "oi",      # /ɔɪ/ - moin
-    "ei": "ei",      # /ɛɪ/ - freidağ (Freitag)
-    "aaj": "aai",    # /a:ɪ/ - braajen (stricken)
-    "ai": "ai",      # /aɪ/ - ailand (Insel)
-    "aau": "aau",    # /a:ʊ/ - blaau (blau)
-    "au": "au",      # /aʊ/ - blaud (Blut)
-
-    # Consonants
-    "ğ": "ch",       # velar fricative
-    "tj": "tsch",    # palatalized t
-}
-
-# Sort keys by length (longest first) for correct replacement order
-_sorted_keys = sorted(custom_phoneme_map.keys(), key=len, reverse=True)
-
-def preprocess_east_frisian(text: str) -> str:
-    """Convert East Frisian orthography to German-compatible forms for espeak-ng."""
-    result = text
-    for key in _sorted_keys:
-        result = result.replace(key, custom_phoneme_map[key])
-    return result
-
-
-# =============================================================================
 # Load Piper Voice Model
 # Piper uses ONNX for inference — fast on CPU, no GPU needed!
 # =============================================================================
@@ -244,20 +203,13 @@ def tts_fn(text):
     
     # 1. Normalize text (numbers, abbreviations, units → words)
     text = normalize_text(text)
-    
-    # 2. In espeak mode, preprocess East Frisian → German-compatible
-    #    In grapheme mode, the model understands native East Frisian chars
-    if PHONEME_MODE == "espeak":
-        text = preprocess_east_frisian(text)
-    
-    # 3. Synthesize with Piper
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-        tmp_path = tmp.name
 
-    with wave.open(tmp_path, "w") as wav_file:
-        voice.synthesize(text, wav_file)
+    # 2. Synthesize with Piper
+    out_path = "out.wav"
+    with wave.open(out_path, "w") as wav_file:
+        voice.synthesize_wav(text, wav_file)
 
-    return tmp_path
+    return out_path
 
 
 # Gradio interface
