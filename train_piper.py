@@ -51,7 +51,8 @@ SPEAKER_RANGES = [
     (601,  650,  "speaker_1"),
     (651,  850,  "speaker_2"),
     (851,  864,  "speaker_1"),
-    (865,  9999, "speaker_2"),
+    (865,  1004, "speaker_2"),
+    (1005,  9999, "speaker_1"),
 ]
 
 
