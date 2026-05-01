@@ -1,0 +1,77 @@
+nohup: ignoring input
+20:39:10  INFO  dataset.py already patched
+20:39:10  INFO  export_onnx.py already patched
+20:39:10  INFO  Downloading pretrained checkpoint...
+20:39:11  INFO  HTTP Request: HEAD https://huggingface.co/datasets/rhasspy/piper-checkpoints/resolve/main/de/de_DE/thorsten/medium/epoch%3D3135-step%3D2702056.ckpt "HTTP/1.1 302 Found"
+20:39:11  INFO  Pretrained checkpoint: /home/tidospecht/.cache/huggingface/hub/datasets--rhasspy--piper-checkpoints/snapshots/99368c250cd7e5ac1244e2f7bea7aaf470865ce9/de/de_DE/thorsten/medium/epoch=3135-step=2702056.ckpt
+20:39:11  INFO  Added 35 characters to phoneme map
+20:39:11  INFO  Phoneme map → piper_training/phoneme_id_map.json  (num_symbols=196)
+20:39:11  INFO  ============================================================
+20:39:11  INFO  MULTI-SPEAKER TRAINING  (2 speakers → averaged export)
+20:39:11  INFO  ============================================================
+20:39:11  INFO  Generated data/oostfraeisk/metadata_multispeaker.csv
+20:39:11  INFO  Starting training  (num_speakers=2, max_epochs=3000) ...
+/home/tidospecht/repos/oostfraeisk_ooversetter/venv/lib/python3.10/site-packages/lightning/fabric/utilities/seed.py:44: No seed found, seed set to 0
+Seed set to 0
+/home/tidospecht/repos/oostfraeisk_ooversetter/venv/lib/python3.10/site-packages/torch/nn/utils/weight_norm.py:144: FutureWarning: `torch.nn.utils.weight_norm` is deprecated in favor of `torch.nn.utils.parametrizations.weight_norm`.
+  WeightNorm.apply(module, name, dim)
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+💡 Tip: For seamless cloud logging and experiment tracking, try installing [litlogger](https://pypi.org/project/litlogger/) to enable LitLogger, which logs metrics and artifacts automatically to the Lightning Experiments platform.
+💡 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.
+INFO:piper.train.vits.dataset:Processing utterances...
+INFO:piper.train.vits.dataset:Processed 1029 utterance(s)
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0]
+┏━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━┳━━━━━━━┓
+┃   ┃ Name    ┃ Type                     ┃ Params ┃ Mode  ┃ FLOPs ┃
+┡━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━╇━━━━━━━┩
+│ 0 │ model_g │ SynthesizerTrn           │ 30.2 M │ train │     0 │
+│ 1 │ model_d │ MultiPeriodDiscriminator │ 46.7 M │ train │     0 │
+└───┴─────────┴──────────────────────────┴────────┴───────┴───────┘
+Trainable params: 76.9 M                                                        
+Non-trainable params: 0                                                         
+Total params: 76.9 M                                                            
+Total estimated model params size (MB): 307.785                                 
+Modules in train mode: 512                                                      
+Modules in eval mode: 0                                                         
+Total FLOPs: 0                                                                  
+INFO:piper.train.vits.lightning:[warmstart] Copied 278 vocoder parameters from /home/tidospecht/.cache/huggingface/hub/datasets--rhasspy--piper-checkpoints/snapshots/99368c250cd7e5ac1244e2f7bea7aaf470865ce9/de/de_DE/thorsten/medium/epoch=3135-step=2702056.ckpt
+/home/tidospecht/repos/oostfraeisk_ooversetter/venv/lib/python3.10/site-packages/lightning/pytorch/utilities/_pytree.py:21: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+/home/tidospecht/repos/oostfraeisk_ooversetter/venv/lib/python3.10/site-packages/lightning/pytorch/trainer/connectors/data_connector.py:434: The 'val_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=23` in the `DataLoader` to improve performance.
+/home/tidospecht/repos/oostfraeisk_ooversetter/venv/lib/python3.10/site-packages/lightning/pytorch/trainer/connectors/data_connector.py:434: The 'train_dataloader' does not have many workers which may be a bottleneck. Consider increasing the value of the `num_workers` argument` to `num_workers=23` in the `DataLoader` to improve performance.
+`Trainer.fit` stopped: `max_epochs=3000` reached.
+Epoch 2999/2999 ━━━━━━━━━━━━━━━━━━ 61/61 0:00:09 • 0:00:00 6.84it/s v_num: 0.000
+05:32:44  INFO  Training complete!
+05:32:44  INFO  Using latest checkpoint: piper_training_multi_logs/lightning_logs/version_0/checkpoints/epoch=2999-step=366000.ckpt
+05:32:46  INFO  Loading checkpoint for averaged export: piper_training_multi_logs/lightning_logs/version_0/checkpoints/epoch=2999-step=366000.ckpt
+/home/tidospecht/repos/oostfraeisk_ooversetter/venv/lib/python3.10/site-packages/torch/nn/utils/weight_norm.py:144: FutureWarning: `torch.nn.utils.weight_norm` is deprecated in favor of `torch.nn.utils.parametrizations.weight_norm`.
+  WeightNorm.apply(module, name, dim)
+05:32:47  INFO  Speaker 0 norm: 4.2724 | Speaker 1 norm: 4.1595 | Averaged norm: 2.9874
+/home/tidospecht/repos/oostfraeisk_text_to_speech/train_piper.py:370: DeprecationWarning: You are using the legacy TorchScript-based ONNX export. Starting in PyTorch 2.9, the new torch.export-based ONNX exporter has become the default. Learn more about the new export logic: https://docs.pytorch.org/docs/stable/onnx_export.html. For exporting control flow: https://pytorch.org/tutorials/beginner/onnx/export_control_flow_model_to_onnx_tutorial.html
+  torch.onnx.export(
+/tmp/piper/src/piper/train/vits/attentions.py:235: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  t_s == t_t
+/tmp/piper/src/piper/train/vits/attentions.py:295: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  pad_length = max(length - (self.window_size + 1), 0)
+/tmp/piper/src/piper/train/vits/attentions.py:296: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  slice_start_position = max((self.window_size + 1) - length, 0)
+/tmp/piper/src/piper/train/vits/attentions.py:298: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  if pad_length > 0:
+/tmp/piper/src/piper/train/vits/transforms.py:174: TracerWarning: Converting a tensor to a Python boolean might cause the trace to be incorrect. We can't record the data flow of Python values, so this value will be treated as a constant in the future. This means that the trace might not generalize to other inputs!
+  assert (discriminant >= 0).all(), discriminant
+/home/tidospecht/repos/oostfraeisk_ooversetter/venv/lib/python3.10/site-packages/torch/onnx/_internal/torchscript_exporter/jit_utils.py:308: UserWarning: Constant folding - Only steps=1 can be constant folded for opset >= 10 onnx::Slice op. Constant folding not applied. (Triggered internally at /pytorch/torch/csrc/jit/passes/onnx/constant_fold.cpp:178.)
+  _C._jit_pass_onnx_node_shape_type_inference(node, params_dict, opset_version)
+/home/tidospecht/repos/oostfraeisk_ooversetter/venv/lib/python3.10/site-packages/torch/onnx/_internal/torchscript_exporter/utils.py:714: UserWarning: Constant folding - Only steps=1 can be constant folded for opset >= 10 onnx::Slice op. Constant folding not applied. (Triggered internally at /pytorch/torch/csrc/jit/passes/onnx/constant_fold.cpp:178.)
+  _C._jit_pass_onnx_graph_shape_type_inference(
+/home/tidospecht/repos/oostfraeisk_ooversetter/venv/lib/python3.10/site-packages/torch/onnx/_internal/torchscript_exporter/utils.py:1187: UserWarning: Constant folding - Only steps=1 can be constant folded for opset >= 10 onnx::Slice op. Constant folding not applied. (Triggered internally at /pytorch/torch/csrc/jit/passes/onnx/constant_fold.cpp:178.)
+  _C._jit_pass_onnx_graph_shape_type_inference(
+05:32:49  INFO  Exported averaged model → model_piper_multi/oostfraeisk.onnx  (77.0 MB)
+05:32:49  INFO  Config → model_piper_multi/oostfraeisk.onnx.json  (num_speakers=1)
+05:32:49  INFO  Loading model for test inference: model_piper_multi/oostfraeisk.onnx
+05:32:49  INFO  Synthesizing 5 test sentences [multi]...
+05:32:49  INFO    [0] Moin, woo gaajt 't dii?  →  model_piper_multi/test_multi_0.wav
+05:32:49  INFO    [1] Denkent jii, dat ik disser sats gaud uutprooten dau?  →  model_piper_multi/test_multi_1.wav
+05:32:49  INFO    [2] Hest duu däi süen fandóóeğ al säin?  →  model_piper_multi/test_multi_2.wav
+05:32:49  INFO    [3] Däi oorsprungelk tóól fan däi Fräisen tüsken Laauwers un Wäiser was dat Olfräisk.  →  model_piper_multi/test_multi_3.wav
+05:32:49  INFO    [4] In disser sats gift dat kiin umluuden of anner roer dingen, man disser is trotsdeem langer as gewoon um dat tau testen.  →  model_piper_multi/test_multi_4.wav
+05:32:49  INFO  Test inference complete for [multi]. WAVs saved in model_piper_multi/
