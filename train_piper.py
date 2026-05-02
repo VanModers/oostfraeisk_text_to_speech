@@ -405,6 +405,11 @@ TEST_SENTENCES = [
     "Hest duu däi süen fandóóeğ al säin?",
     "Däi oorsprungelk tóól fan däi Fräisen tüsken Laauwers un Wäiser was dat Olfräisk.",
     "In disser sats gift dat kiin umluuden of anner roer dingen, man disser is trotsdeem langer as gewoon um dat tau testen.",
+    "Föör disser ooversetter mussent wii eerst 'n paróleelkorpus uut düütsk un oostfräisk satsen móóken.",
+    "Mii daajt d' rüeğ seer un ik góó nuu up bäer. Man eerst sal ik eeven däi tóóvel ofrüümen.",
+    "Wielk Wilkens wichter willent wiet wuel waaskern - wiet waaske willent Wielk Wilkens wichter waaskern.",
+    "In disser moment denk ik an früen un an 't kooken. Dan in miin läest leevend was ik 'n kok un kun gaud dansen.",
+    "Däi letiinsk tóól, kört Letiin of Letiinsk, is 'n indoeuropeesk tóól, däi oorsprungelk fan däi Letiiners, däi bewooners fan Latium mit Room as tsentrum, proot't wur.",
 ]
 
 
