@@ -20,18 +20,17 @@ import soundfile as sf
 
 # -------- CONFIG --------
 TEXT_FILE = "texts/rec0.txt"
-METADATA_FILE = "data/oostfraeisk/metadata.csv"
+METADATA_FILE = "data/metadata.csv"
 NEW_WAVS_DIR = "new_recordings/wavs"
 NEW_METADATA_FILE = "new_recordings/metadata.csv"
+NEW_MULTISPEAKER_METADATA_FILE = "new_recordings/metadata_multispeaker.csv"
 SAMPLE_RATE = 22050
 CHANNELS = 1
 MAX_WORDS = 25
-RERECORD_COUNT = 300          # how many sentences to re-record
-RERECORD_DIR = "rerecord/wavs"  # where re-recordings are saved
+SPEAKER_IDS = ["speaker_1", "speaker_2"]
 # -------------------------
 
 os.makedirs(NEW_WAVS_DIR, exist_ok=True)
-os.makedirs(RERECORD_DIR, exist_ok=True)
 
 
 # =========================================================================
@@ -151,15 +150,17 @@ def get_status():
     )
 
 
-def get_next_sentence():
+def get_next_sentence(skipped=None):
     """Fetch the next sentence that needs recording."""
     pending, _ = build_pending_sentences()
+    if skipped:
+        pending = [s for s in pending if s not in skipped]
     if not pending:
         return "All sentences have been recorded!", ""
     return pending[0], f"({len(pending)} sentences remaining)"
 
 
-def save_recording(audio, sentence_text):
+def save_recording(audio, sentence_text, speaker_id, skipped):
     """
     Process and save a recording.
 
@@ -167,16 +168,23 @@ def save_recording(audio, sentence_text):
     ----------
     audio : tuple (sample_rate, numpy array)  — from gr.Audio(type="numpy")
     sentence_text : str — the sentence that was read
+    speaker_id : str — ID of the person reading the sentence
+    skipped : set — sentences the user has skipped
 
     Returns
     -------
-    status_msg, next_sentence, remaining_info, updated_status
+    status_msg, next_sentence, remaining_info, updated_status, audio_clear, skipped
     """
+    if skipped is None:
+        skipped = set()
     if audio is None:
-        return "No audio received. Please record again.", sentence_text, "", get_status(), None
+        return "No audio received. Please record again.", sentence_text, "", get_status(), None, skipped
 
     if not sentence_text or sentence_text.startswith("All sentences"):
-        return "No more sentences to record.", sentence_text, "", get_status(), None
+        return "No more sentences to record.", sentence_text, "", get_status(), None, skipped
+
+    if speaker_id not in SPEAKER_IDS:
+        return "Please select a valid speaker ID.", sentence_text, "", get_status(), None, skipped
 
     sr_in, data = audio
 
@@ -210,36 +218,26 @@ def save_recording(audio, sentence_text):
     with open(NEW_METADATA_FILE, "a", encoding="utf-8") as f:
         f.write(f"{filename}|{sentence_text}|{sentence_text}\n")
 
+    # Keep speaker-aware metadata separate so the existing single-speaker
+    # metadata remains compatible with the current training workflow.
+    with open(NEW_MULTISPEAKER_METADATA_FILE, "a", encoding="utf-8") as f:
+        f.write(f"{filename}|{speaker_id}|{sentence_text}\n")
+
     # Get next sentence
-    next_sent, remaining = get_next_sentence()
+    next_sent, remaining = get_next_sentence(skipped)
     status = get_status()
 
-    return f"Saved {filename}.wav", next_sent, remaining, status, None
+    return f"Saved {filename}.wav for {speaker_id}", next_sent, remaining, status, None, skipped
 
 
-def skip_sentence(sentence_text):
+def skip_sentence(sentence_text, skipped):
     """Skip the current sentence without recording and move to the next."""
-    pending, _ = build_pending_sentences()
+    if skipped is None:
+        skipped = set()
+    skipped.add(sentence_text)
 
-    if not pending:
-        return "All sentences have been recorded!", "", get_status()
-
-    # Find the current sentence in pending and return the next one
-    try:
-        idx = pending.index(sentence_text)
-        if idx + 1 < len(pending):
-            next_sent = pending[idx + 1]
-            remaining = f"({len(pending)} sentences remaining)"
-        else:
-            # Wrap around to first
-            next_sent = pending[0]
-            remaining = f"({len(pending)} sentences remaining)"
-    except ValueError:
-        # Current sentence not found in pending (maybe already saved), just get next
-        next_sent = pending[0]
-        remaining = f"({len(pending)} sentences remaining)"
-
-    return next_sent, remaining, get_status()
+    next_sent, remaining = get_next_sentence(skipped)
+    return next_sent, remaining, get_status(), skipped
 
 
 def build_combined_metadata():
@@ -270,9 +268,19 @@ def download_new_recordings():
 
     zip_path = os.path.join(tempfile.gettempdir(), "new_recordings.zip")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Combined metadata (old + new) so it can replace the original file
         combined = build_combined_metadata()
         zf.writestr("new_recordings/metadata.csv", combined)
 
+        # Piper multi-speaker format for the newly recorded files only:
+        # utterance_id|speaker_id|text
+        if os.path.exists(NEW_MULTISPEAKER_METADATA_FILE):
+            zf.write(
+                NEW_MULTISPEAKER_METADATA_FILE,
+                "new_recordings/metadata_multispeaker.csv",
+            )
+
+        # Add only the new wav files
         if os.path.isdir(NEW_WAVS_DIR):
             for wav_file in sorted(os.listdir(NEW_WAVS_DIR)):
                 if wav_file.endswith(".wav"):
@@ -283,228 +291,98 @@ def download_new_recordings():
 
 
 # =========================================================================
-# Re-record helpers — work through the first RERECORD_COUNT metadata entries
-# =========================================================================
-
-def load_rerecord_sentences():
-    """Return list of (sentence_id, text) for the first RERECORD_COUNT entries."""
-    entries = []
-    if os.path.exists(METADATA_FILE):
-        with open(METADATA_FILE, "r", encoding="utf-8") as f:
-            for line in f:
-                parts = line.strip().split("|")
-                if len(parts) >= 2:
-                    entries.append((parts[0], parts[1]))
-                if len(entries) >= RERECORD_COUNT:
-                    break
-    return entries
-
-
-def get_rerecord_pending():
-    """Return (sentence_id, text) pairs not yet saved in RERECORD_DIR."""
-    done = {
-        wav[:-4]
-        for wav in os.listdir(RERECORD_DIR)
-        if wav.endswith(".wav")
-    }
-    return [(sid, text) for sid, text in load_rerecord_sentences() if sid not in done]
-
-
-def get_rerecord_status():
-    pending = get_rerecord_pending()
-    done = RERECORD_COUNT - len(pending)
-    return f"**Re-record progress:** {done} / {RERECORD_COUNT} done  \u2014  {len(pending)} remaining"
-
-
-def get_next_rerecord():
-    pending = get_rerecord_pending()
-    if not pending:
-        return "All 300 sentences re-recorded!", "", f"(0 of {RERECORD_COUNT} remaining)"
-    sid, text = pending[0]
-    return text, sid, f"({len(pending)} of {RERECORD_COUNT} remaining)"
-
-
-def save_rerecording(audio, sentence_text, sentence_id):
-    if audio is None:
-        next_text, next_id, remaining = get_next_rerecord()
-        return "No audio received. Please record again.", sentence_text, sentence_id, remaining, get_rerecord_status(), None
-
-    sr_in, data = audio
-
-    if data.dtype != np.float32:
-        data = data.astype(np.float32)
-        if np.max(np.abs(data)) > 2.0:
-            data = data / 32768.0
-
-    if data.ndim > 1:
-        data = data.mean(axis=1)
-
-    if sr_in != SAMPLE_RATE:
-        data = librosa.resample(data, orig_sr=sr_in, target_sr=SAMPLE_RATE)
-
-    data = trim_silence(data)
-
-    filepath = os.path.join(RERECORD_DIR, f"{sentence_id}.wav")
-    sf.write(filepath, data, SAMPLE_RATE)
-
-    next_text, next_id, remaining = get_next_rerecord()
-    return f"Saved {sentence_id}.wav", next_text, next_id, remaining, get_rerecord_status(), None
-
-
-def skip_rerecord(sentence_id):
-    pending = get_rerecord_pending()
-    if not pending:
-        return "All done!", "", f"(0 of {RERECORD_COUNT} remaining)", get_rerecord_status()
-    try:
-        idx = next(i for i, (sid, _) in enumerate(pending) if sid == sentence_id)
-        sid, text = pending[(idx + 1) % len(pending)]
-    except StopIteration:
-        sid, text = pending[0]
-    remaining = f"({len(pending)} of {RERECORD_COUNT} remaining)"
-    return text, sid, remaining, get_rerecord_status()
-
-
-def download_rerecordings():
-    """Zip all re-recordings (keeps original sentence IDs, ready to replace originals)."""
-    wavs = [w for w in os.listdir(RERECORD_DIR) if w.endswith(".wav")] if os.path.isdir(RERECORD_DIR) else []
-    if not wavs:
-        return None
-    zip_path = os.path.join(tempfile.gettempdir(), "rerecordings.zip")
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for wav in sorted(wavs):
-            zf.write(os.path.join(RERECORD_DIR, wav), f"rerecord/wavs/{wav}")
-    return zip_path
-
-
-# =========================================================================
 # Gradio UI
 # =========================================================================
 
-
 def build_ui():
     with gr.Blocks(title="East Frisian TTS — Dataset Recorder") as demo:
-        gr.Markdown("# East Frisian TTS Dataset Recorder")
+        gr.Markdown(
+            "# East Frisian TTS Dataset Recorder\n"
+            "Record sentences for the East Frisian Low Saxon TTS dataset.  \n"
+            "Sentences already in the original dataset are skipped automatically.  \n"
+            "New recordings can be downloaded as a zip file."
+        )
 
-        with gr.Tabs():
+        status_md = gr.Markdown(value=get_status)
 
-            # ------------------------------------------------------------------
-            # Tab 1 — Record new sentences
-            # ------------------------------------------------------------------
-            with gr.Tab("Record new sentences"):
-                gr.Markdown(
-                    "Record sentences for the East Frisian Low Saxon TTS dataset.  \n"
-                    "Sentences already in the original dataset are skipped automatically.  \n"
-                    "New recordings can be downloaded as a zip file."
+        speaker_select = gr.Dropdown(
+            choices=SPEAKER_IDS,
+            value=SPEAKER_IDS[0],
+            label="Speaker ID",
+            info="Select the ID of the person currently recording.",
+            interactive=True,
+        )
+
+        with gr.Row():
+            with gr.Column(scale=2):
+                sentence_box = gr.Textbox(
+                    label="Read this sentence aloud:",
+                    interactive=False,
+                    lines=3,
+                )
+                remaining_info = gr.Textbox(
+                    label="",
+                    interactive=False,
+                    lines=1,
                 )
 
-                status_md = gr.Markdown(value=get_status)
-
-                with gr.Row():
-                    with gr.Column(scale=2):
-                        sentence_box = gr.Textbox(
-                            label="Read this sentence aloud:",
-                            interactive=False,
-                            lines=3,
-                        )
-                        remaining_info = gr.Textbox(
-                            label="",
-                            interactive=False,
-                            lines=1,
-                        )
-                    with gr.Column(scale=1):
-                        audio_input = gr.Audio(
-                            sources=["microphone"],
-                            type="numpy",
-                            label="Record your voice",
-                        )
-
-                with gr.Row():
-                    save_btn = gr.Button("Save recording", variant="primary")
-                    skip_btn = gr.Button("Skip sentence")
-                    load_btn = gr.Button("Load first sentence")
-
-                save_msg = gr.Textbox(label="Status", interactive=False, lines=1)
-
-                gr.Markdown("---")
-                download_btn = gr.Button("Download new recordings (zip)")
-                download_file = gr.File(label="Download")
-
-                def on_load():
-                    sent, rem = get_next_sentence()
-                    return sent, rem, get_status()
-
-                load_btn.click(fn=on_load, inputs=[], outputs=[sentence_box, remaining_info, status_md])
-                save_btn.click(fn=save_recording, inputs=[audio_input, sentence_box],
-                               outputs=[save_msg, sentence_box, remaining_info, status_md, audio_input])
-                skip_btn.click(fn=skip_sentence, inputs=[sentence_box],
-                               outputs=[sentence_box, remaining_info, status_md])
-                download_btn.click(fn=download_new_recordings, inputs=[], outputs=[download_file])
-                demo.load(fn=on_load, inputs=[], outputs=[sentence_box, remaining_info, status_md])
-
-            # ------------------------------------------------------------------
-            # Tab 2 — Re-record first 300 sentences
-            # ------------------------------------------------------------------
-            with gr.Tab(f"Re-record first {RERECORD_COUNT} sentences"):
-                gr.Markdown(
-                    f"Re-record the first **{RERECORD_COUNT}** sentences from the original dataset.  \n"
-                    "Re-recordings are saved with their original sentence IDs to `rerecord/wavs/`.  \n"
-                    "Download the zip and replace the corresponding files in `data/oostfraeisk/wavs/`."
+            with gr.Column(scale=1):
+                audio_input = gr.Audio(
+                    sources=["microphone"],
+                    type="numpy",
+                    label="Record your voice",
                 )
 
-                rr_status_md = gr.Markdown(value=get_rerecord_status)
+        with gr.Row():
+            save_btn = gr.Button("Save recording", variant="primary")
+            skip_btn = gr.Button("Skip sentence")
+            load_btn = gr.Button("Load first sentence")
 
-                # Hidden state to carry the sentence ID between callbacks
-                rr_sentence_id = gr.State("")
+        save_msg = gr.Textbox(label="Status", interactive=False, lines=1)
+        skipped_state = gr.State(set())
 
-                with gr.Row():
-                    with gr.Column(scale=2):
-                        rr_sentence_box = gr.Textbox(
-                            label="Read this sentence aloud:",
-                            interactive=False,
-                            lines=3,
-                        )
-                        rr_remaining_info = gr.Textbox(
-                            label="",
-                            interactive=False,
-                            lines=1,
-                        )
-                    with gr.Column(scale=1):
-                        rr_audio_input = gr.Audio(
-                            sources=["microphone"],
-                            type="numpy",
-                            label="Record your voice",
-                        )
+        gr.Markdown("---")
+        download_btn = gr.Button("Download new recordings (zip)")
+        download_file = gr.File(label="Download")
 
-                with gr.Row():
-                    rr_save_btn = gr.Button("Save recording", variant="primary")
-                    rr_skip_btn = gr.Button("Skip sentence")
-                    rr_load_btn = gr.Button("Load first sentence")
+        # --- event wiring ---
 
-                rr_save_msg = gr.Textbox(label="Status", interactive=False, lines=1)
+        def on_load(skipped):
+            if skipped is None:
+                skipped = set()
+            sent, rem = get_next_sentence(skipped)
+            return sent, rem, get_status(), skipped
 
-                gr.Markdown("---")
-                rr_download_btn = gr.Button("Download re-recordings (zip)")
-                rr_download_file = gr.File(label="Download")
+        load_btn.click(
+            fn=on_load,
+            inputs=[skipped_state],
+            outputs=[sentence_box, remaining_info, status_md, skipped_state],
+        )
 
-                def rr_on_load():
-                    text, sid, remaining = get_next_rerecord()
-                    return text, sid, remaining, get_rerecord_status()
+        save_btn.click(
+            fn=save_recording,
+            inputs=[audio_input, sentence_box, speaker_select, skipped_state],
+            outputs=[save_msg, sentence_box, remaining_info, status_md, audio_input, skipped_state],
+        )
 
-                rr_load_btn.click(
-                    fn=rr_on_load, inputs=[],
-                    outputs=[rr_sentence_box, rr_sentence_id, rr_remaining_info, rr_status_md],
-                )
-                rr_save_btn.click(
-                    fn=save_rerecording,
-                    inputs=[rr_audio_input, rr_sentence_box, rr_sentence_id],
-                    outputs=[rr_save_msg, rr_sentence_box, rr_sentence_id, rr_remaining_info, rr_status_md, rr_audio_input],
-                )
-                rr_skip_btn.click(
-                    fn=skip_rerecord,
-                    inputs=[rr_sentence_id],
-                    outputs=[rr_sentence_box, rr_sentence_id, rr_remaining_info, rr_status_md],
-                )
-                rr_download_btn.click(fn=download_rerecordings, inputs=[], outputs=[rr_download_file])
+        skip_btn.click(
+            fn=skip_sentence,
+            inputs=[sentence_box, skipped_state],
+            outputs=[sentence_box, remaining_info, status_md, skipped_state],
+        )
+
+        download_btn.click(
+            fn=download_new_recordings,
+            inputs=[],
+            outputs=[download_file],
+        )
+
+        # Auto-load first sentence on page load
+        demo.load(
+            fn=on_load,
+            inputs=[skipped_state],
+            outputs=[sentence_box, remaining_info, status_md, skipped_state],
+        )
 
     return demo
 
