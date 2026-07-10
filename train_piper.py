@@ -410,6 +410,7 @@ TEST_SENTENCES = [
     "Wielk Wilkens wichter willent wiet wuel waaskern - wiet waaske willent Wielk Wilkens wichter waaskern.",
     "In disser moment denk ik an früen un an 't kooken. Dan in miin läest leevend was ik 'n kok un kun gaud dansen.",
     "Däi letiinsk tóól, kört Letiin of Letiinsk, is 'n indoeuropeesk tóól, däi oorsprungelk fan däi Letiiners, däi bewooners fan Latium mit Room as tsentrum, proot't wur.",
+    "Wen däi bossem soo ful, un dat läid is soo däip, un dat haart sülst man wul, dat 't doch stiel lağ un sleep. Och wat helpt dor 'n gaudiğ róód? Och wat helpt dor 'n gaud woord? Dat häiel lücht is ful kwóód! Un däi blöymtûun fersoort. Man 'n ooğstróól fan höör däi miin lecht is, miin süen. 'T is ful klööer un ful gööer! 'T is weer mâaj, wor ik bün.",
 ]
 
 
