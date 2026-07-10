@@ -26,6 +26,7 @@ import sys
 import unicodedata
 from pathlib import Path
 from typing import Optional, Tuple
+import piper
 
 logging.basicConfig(
     level=logging.INFO,
@@ -68,8 +69,9 @@ def get_speaker(sentence_num: int) -> str:
 
 def apply_patches() -> None:
     """Patch piper1-gpl bugs (idempotent — safe to run multiple times)."""
-    dataset_py = Path("/tmp/piper/src/piper/train/vits/dataset.py")
-    export_py  = Path("/tmp/piper/src/piper/train/export_onnx.py")
+    piper_dir = Path(piper.__file__).resolve().parent
+    dataset_py = piper_dir / "train" / "vits" / "dataset.py"
+    export_py = piper_dir / "train" / "export_onnx.py"
 
     if not dataset_py.exists():
         log.warning("piper1-gpl not found at /tmp/piper — skipping patches")
