@@ -88,7 +88,7 @@ def apply_patches() -> None:
                 "\n",
                 f"            {PATCH_MARKER}\n",
                 "            _custom_map = phoneme_id_map\n",
-                "            phonemes_to_ids = lambda phonemes: default_phonemes_to_ids(phonemes, id_map=_custom_map)\n",
+                "            phonemes_to_ids = lambda phonemes, **kwargs: default_phonemes_to_ids(phonemes, id_map=_custom_map)\n",
                 "\n",
             ]
             for j, pl in enumerate(patch):
