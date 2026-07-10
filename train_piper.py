@@ -26,7 +26,6 @@ import sys
 import unicodedata
 from pathlib import Path
 from typing import Optional, Tuple
-import piper
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,39 +42,23 @@ SAMPLE_RATE        = 22050
 ESPEAK_VOICE       = "de"
 OPSET_VERSION      = 15
 
-# Speaker assignment: list of (first_sentence, last_sentence, speaker_name)
-SPEAKER_RANGES = [
-    (1,    300,  "speaker_1"),
-    (301,  400,  "speaker_2"),
-    (401,  500,  "speaker_1"),
-    (501,  600,  "speaker_2"),
-    (601,  650,  "speaker_1"),
-    (651,  850,  "speaker_2"),
-    (851,  864,  "speaker_1"),
-    (865,  1004, "speaker_2"),
-    (1005,  9999, "speaker_1"),
-]
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def get_speaker(sentence_num: int) -> str:
-    """Return the speaker name for a given sentence number."""
-    for start, end, speaker in SPEAKER_RANGES:
-        if start <= sentence_num <= end:
-            return speaker
-    return "speaker_1"
-
 
 def apply_patches() -> None:
     """Patch piper1-gpl bugs (idempotent — safe to run multiple times)."""
+    try:
+        import piper
+    except ImportError as exc:
+        raise RuntimeError(
+            "piper is not importable; activate the Piper training environment first"
+        ) from exc
+
     piper_dir = Path(piper.__file__).resolve().parent
     dataset_py = piper_dir / "train" / "vits" / "dataset.py"
     export_py = piper_dir / "train" / "export_onnx.py"
 
     if not dataset_py.exists():
-        log.warning("piper1-gpl not found at /tmp/piper — skipping patches")
-        return
+        raise FileNotFoundError(f"Piper training source not found: {dataset_py}")
 
     # Bug 1: custom phoneme map is loaded but never passed to phonemes_to_ids()
     PATCH_MARKER = "# PATCH-PHONEME-MAP: Use custom phoneme map for phoneme-to-ID conversion"
@@ -173,25 +156,86 @@ def build_phoneme_map(out_dir: Path) -> Tuple[Path, int]:
     return phonemes_path, num_symbols
 
 
-def generate_multi_metadata() -> Path:
-    """
-    Generate data/oostfraeisk/metadata_multispeaker.csv with format
-    sentence_XXXX|speaker_N|text  (speaker in col 2, text in col 3).
-    """
-    metadata_path      = DATASET_DIR / "metadata.csv"
-    multi_metadata_path = DATASET_DIR / "metadata_multispeaker.csv"
+def validate_metadata(metadata_path: Path, *, multispeaker: bool = False) -> None:
+    """Validate metadata, audio files, and checked-in speaker assignments."""
+    if not metadata_path.is_file():
+        raise FileNotFoundError(f"Metadata not found: {metadata_path}")
 
-    with open(metadata_path, "r", encoding="utf-8") as f_in, \
-         open(multi_metadata_path, "w", encoding="utf-8") as f_out:
-        for row in csv.reader(f_in, delimiter="|"):
-            utt_id = row[0]
-            text   = row[-1]
-            m = re.match(r"sentence_(\d+)", utt_id)
-            speaker = get_speaker(int(m.group(1))) if m else "speaker_1"
-            f_out.write(f"{utt_id}|{speaker}|{text}\n")
+    with open(metadata_path, "r", encoding="utf-8", newline="") as metadata_file:
+        rows = list(csv.reader(metadata_file, delimiter="|"))
 
-    log.info("Generated %s", multi_metadata_path)
-    return multi_metadata_path
+    if not rows:
+        raise ValueError(f"Metadata is empty: {metadata_path}")
+
+    seen_ids = set()
+    speakers = set()
+    for row_number, row in enumerate(rows, start=1):
+        if len(row) != 3:
+            raise ValueError(
+                f"{metadata_path}:{row_number}: expected exactly 3 columns, "
+                f"got {len(row)}; check CSV quoting"
+            )
+
+        utt_id = row[0].strip()
+        text = row[-1].strip()
+        if not utt_id or not text:
+            raise ValueError(f"{metadata_path}:{row_number}: empty id or text")
+        if utt_id in seen_ids:
+            raise ValueError(f"{metadata_path}:{row_number}: duplicate id {utt_id!r}")
+        seen_ids.add(utt_id)
+
+        audio_path = DATASET_DIR / "wavs" / utt_id
+        if not audio_path.exists():
+            audio_path = audio_path.with_suffix(".wav")
+        if not audio_path.is_file():
+            raise FileNotFoundError(
+                f"{metadata_path}:{row_number}: audio not found for {utt_id!r}"
+            )
+
+        if multispeaker:
+            speaker = row[1].strip()
+            if not speaker:
+                raise ValueError(f"{metadata_path}:{row_number}: empty speaker")
+            speakers.add(speaker)
+
+    if multispeaker:
+        expected_speakers = {"speaker_1", "speaker_2"}
+        if speakers != expected_speakers:
+            raise ValueError(
+                f"Expected speakers {sorted(expected_speakers)}, got {sorted(speakers)}"
+            )
+
+        canonical_path = DATASET_DIR / "metadata.csv"
+        with open(canonical_path, "r", encoding="utf-8", newline="") as canonical_file:
+            canonical_rows = list(csv.reader(canonical_file, delimiter="|"))
+
+        if len(rows) != len(canonical_rows):
+            raise ValueError(
+                f"Metadata row count mismatch: {metadata_path} has {len(rows)}, "
+                f"{canonical_path} has {len(canonical_rows)}"
+            )
+
+        for row_number, (multi_row, canonical_row) in enumerate(
+            zip(rows, canonical_rows), start=1
+        ):
+            if multi_row[0] != canonical_row[0]:
+                raise ValueError(
+                    f"{metadata_path}:{row_number}: id {multi_row[0]!r} does not "
+                    f"match {canonical_row[0]!r}"
+                )
+            if multi_row[-1] != canonical_row[-1]:
+                raise ValueError(
+                    f"{metadata_path}:{row_number}: text differs from {canonical_path}"
+                )
+
+        log.info(
+            "Validated %s: %d utterances, speakers=%s",
+            metadata_path,
+            len(rows),
+            ", ".join(sorted(speakers)),
+        )
+    else:
+        log.info("Validated %s: %d utterances", metadata_path, len(rows))
 
 
 def run_training(
@@ -203,6 +247,7 @@ def run_training(
     pretrained_ckpt: str,
     batch_size:    int,
     max_epochs:    int,
+    num_workers:   int,
     num_speakers:  int = 1,
 ) -> None:
     """Run `python -m piper.train fit` with the given settings."""
@@ -225,6 +270,7 @@ def run_training(
         "--data.cache_dir",             str(cache_dir),
         "--data.config_path",           str(config_path),
         "--data.batch_size",            str(batch_size),
+        "--data.num_workers",           str(num_workers),
         "--data.validation_split",      "0.05",
         "--data.num_test_examples",     "5",
         "--trainer.max_epochs",         str(max_epochs),
@@ -240,41 +286,47 @@ def run_training(
     ]
 
     log.info("Starting training  (num_speakers=%d, max_epochs=%d) ...", num_speakers, max_epochs)
-    result = subprocess.run(cmd, check=False)
-    if result.returncode != 0:
-        log.error("Training exited with code %d", result.returncode)
-    else:
-        log.info("Training complete!")
+    subprocess.run(cmd, check=True)
+    log.info("Training complete!")
 
 
 def find_best_checkpoint(logs_dir: Path) -> Optional[Path]:
-    """Find the checkpoint with the lowest val_loss under logs_dir."""
-    # Primary location: {logs_dir}/lightning_logs/... (set via --trainer.default_root_dir)
-    # Fallback: lightning_logs/ in cwd (Lightning's default when no root_dir is set)
-    patterns = [
-        str(logs_dir / "lightning_logs" / "version_*" / "checkpoints" / "*.ckpt"),
-        str(logs_dir / "version_*" / "checkpoints" / "*.ckpt"),
+    """Find the best checkpoint from the most recent training run."""
+    version_dirs = [
+        Path(path)
+        for pattern in (
+            str(logs_dir / "lightning_logs" / "version_*"),
+            str(logs_dir / "version_*"),
+        )
+        for path in glob.glob(pattern)
+        if Path(path).is_dir()
     ]
-    ckpts = sorted(set(c for p in patterns for c in glob.glob(p)))
+
+    if not version_dirs:
+        log.error("No Lightning runs found under %s", logs_dir)
+        return None
+
+    latest_version_dir = max(version_dirs, key=lambda path: path.stat().st_mtime)
+    ckpts = sorted(latest_version_dir.glob("checkpoints/*.ckpt"))
 
     if not ckpts:
-        log.error("No checkpoints found under %s", logs_dir)
+        log.error("No checkpoints found in latest run %s", latest_version_dir)
         return None
 
     best_ckpt   = None
     best_loss   = float("inf")
     for ckpt in ckpts:
-        m = re.search(r"val_loss=([\d.]+)", ckpt)
+        m = re.search(r"val_loss=([\d.]+)", str(ckpt))
         if m:
             loss = float(m.group(1))
             if loss < best_loss:
                 best_loss = loss
-                best_ckpt = Path(ckpt)
+                best_ckpt = ckpt
 
     if best_ckpt:
         log.info("Best checkpoint (val_loss=%.4f): %s", best_loss, best_ckpt)
     else:
-        best_ckpt = Path(ckpts[-1])
+        best_ckpt = ckpts[-1]
         log.info("Using latest checkpoint: %s", best_ckpt)
 
     return best_ckpt
@@ -472,6 +524,10 @@ def main() -> None:
     parser.add_argument("--batch-size",      type=int,  default=16)
     parser.add_argument("--max-epochs",      type=int,  default=3000)
     parser.add_argument(
+        "--num-workers", type=int, default=0,
+        help="Data-loader worker processes (0 is the safest setting)",
+    )
+    parser.add_argument(
         "--pretrained-ckpt", type=str, default=None,
         help="Path to pretrained .ckpt (auto-downloaded if omitted)",
     )
@@ -494,6 +550,15 @@ def main() -> None:
         )
         sys.exit(1)
 
+    run_single = args.mode in ("single", "both")
+    run_multi = args.mode in ("multi", "both")
+
+    validate_metadata(DATASET_DIR / "metadata.csv")
+    if run_multi:
+        validate_metadata(
+            DATASET_DIR / "metadata_multispeaker.csv", multispeaker=True
+        )
+
     # 1. Patch piper1-gpl
     if not args.skip_patches:
         apply_patches()
@@ -504,9 +569,6 @@ def main() -> None:
     # 3. Build shared phoneme map  (always in piper_training/)
     shared_training_dir = Path("piper_training")
     phonemes_path, num_symbols = build_phoneme_map(shared_training_dir)
-
-    run_single = args.mode in ("single", "both")
-    run_multi  = args.mode in ("multi",  "both")
 
     # ── Single-speaker ────────────────────────────────────────────────────────
     if run_single:
@@ -523,6 +585,7 @@ def main() -> None:
             pretrained_ckpt= pretrained_ckpt,
             batch_size     = args.batch_size,
             max_epochs     = args.max_epochs,
+            num_workers    = args.num_workers,
             num_speakers   = 1,
         )
         best = find_best_checkpoint(logs_dir)
@@ -540,7 +603,7 @@ def main() -> None:
         log.info("=" * 60)
         log.info("MULTI-SPEAKER TRAINING  (2 speakers → averaged export)")
         log.info("=" * 60)
-        multi_metadata  = generate_multi_metadata()
+        multi_metadata  = DATASET_DIR / "metadata_multispeaker.csv"
         training_dir_m  = Path("piper_training_multi")
         logs_dir_m      = Path("piper_training_multi_logs")
         run_training(
@@ -552,6 +615,7 @@ def main() -> None:
             pretrained_ckpt= pretrained_ckpt,
             batch_size     = args.batch_size,
             max_epochs     = args.max_epochs,
+            num_workers    = args.num_workers,
             num_speakers   = 2,
         )
         best_m = find_best_checkpoint(logs_dir_m)
