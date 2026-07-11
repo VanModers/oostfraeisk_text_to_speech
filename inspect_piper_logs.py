@@ -11,6 +11,8 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import threading
+import time
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -19,6 +21,32 @@ from typing import Any, Optional
 
 DEFAULT_LOGS_DIR = Path("piper_training_multi_logs")
 DEFAULT_OUTPUT_DIR = Path("piper_log_exports")
+
+
+def progress(message: str) -> None:
+    """Print progress immediately, including when stdout is redirected."""
+    print(message, flush=True)
+
+
+def reload_with_heartbeat(accumulator: Any, interval_seconds: int = 15) -> None:
+    """Reload TensorBoard events while periodically showing that work continues."""
+    finished = threading.Event()
+    started = time.monotonic()
+
+    def heartbeat() -> None:
+        while not finished.wait(interval_seconds):
+            elapsed = time.monotonic() - started
+            progress(f"  Still scanning TensorBoard events ({elapsed:.0f}s elapsed)...")
+
+    heartbeat_thread = threading.Thread(target=heartbeat, daemon=True)
+    heartbeat_thread.start()
+    try:
+        accumulator.Reload()
+    finally:
+        finished.set()
+        heartbeat_thread.join(timeout=1)
+
+    progress(f"Finished scanning events in {time.monotonic() - started:.1f}s")
 
 
 def package_version(package_name: str) -> str:
@@ -201,22 +229,47 @@ def create_export(args: argparse.Namespace) -> tuple[Path, Path]:
         ) from exc
 
     logs_dir = args.logs_dir.expanduser().resolve()
+    progress(f"Searching for Lightning runs under: {logs_dir}")
     run_dir = find_run(logs_dir, args.run)
+    progress(f"Selected run: {run_dir}")
+
+    event_files = sorted(run_dir.glob("events.out.tfevents.*"))
+    if not event_files:
+        raise RuntimeError(f"No TensorBoard event files found in {run_dir}")
+    total_event_bytes = sum(path.stat().st_size for path in event_files)
+    progress(
+        f"Found {len(event_files)} event file(s), "
+        f"{total_event_bytes / (1024 ** 2):.1f} MiB total"
+    )
+    for event_file in event_files:
+        progress(
+            f"  {event_file.name}: {event_file.stat().st_size / (1024 ** 2):.1f} MiB"
+        )
 
     accumulator = EventAccumulator(
         str(run_dir),
-        size_guidance={"scalars": 0},
+        size_guidance={
+            "scalars": 0,
+            "images": 1,
+            "audio": 1,
+            "histograms": 1,
+            "compressedHistograms": 1,
+            "tensors": 1,
+        },
     )
-    accumulator.Reload()
+    progress("Scanning TensorBoard events for scalar metrics...")
+    reload_with_heartbeat(accumulator)
     tags = sorted(accumulator.Tags().get("scalars", []))
     if not tags:
         raise RuntimeError(f"No TensorBoard scalar metrics found in {run_dir}")
+    progress(f"Found {len(tags)} scalar tag(s)")
 
     scalar_events = {tag: accumulator.Scalars(tag) for tag in tags}
     export_name = safe_name(f"{logs_dir.name}_{run_dir.name}")
     output_root = args.output_dir.expanduser().resolve()
     export_dir = output_root / export_name
     export_dir.mkdir(parents=True, exist_ok=True)
+    progress(f"Writing compact export to: {export_dir}")
 
     report_path = export_dir / "training_log_report.txt"
     csv_path = export_dir / "training_scalars.csv"
@@ -239,9 +292,10 @@ def create_export(args: argparse.Namespace) -> tuple[Path, Path]:
         args.last_points,
     )
 
-    hparams_path = run_dir / "hparams.yaml"
-    if hparams_path.is_file():
-        shutil.copy2(hparams_path, export_dir / "hparams.yaml")
+    for config_name in ("hparams.yaml", "config.yaml"):
+        config_path = run_dir / config_name
+        if config_path.is_file():
+            shutil.copy2(config_path, export_dir / config_name)
 
     manifest = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -253,6 +307,7 @@ def create_export(args: argparse.Namespace) -> tuple[Path, Path]:
         json.dump(manifest, manifest_file, ensure_ascii=False, indent=2)
 
     archive_path = output_root / f"{export_name}.tar.gz"
+    progress(f"Creating shareable archive: {archive_path}")
     with tarfile.open(archive_path, "w:gz") as archive:
         for path in sorted(export_dir.iterdir()):
             if path.is_file():
