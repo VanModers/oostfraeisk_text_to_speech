@@ -1,0 +1,62 @@
+_instantiator: lightning.pytorch.cli.instantiate_module
+batch_size: 16
+betas:
+- 0.8
+- 0.99
+betas_d:
+- 0.5
+- 0.9
+c_kl: 1.0
+c_mel: 45
+dataset: null
+eps: 1.0e-09
+filter_channels: 768
+filter_length: 1024
+gin_channels: 0
+grad_clip: null
+hidden_channels: 192
+hop_length: 256
+init_lr_ratio: 1.0
+inter_channels: 192
+kernel_size: 3
+learning_rate: 0.0002
+learning_rate_d: 0.0001
+lr_decay: 0.999875
+lr_decay_d: 0.9999
+mel_channels: 80
+mel_fmax: null
+mel_fmin: 0.0
+n_heads: 2
+n_layers: 6
+n_layers_q: 3
+num_speakers: 2
+num_symbols: 198
+p_dropout: 0.1
+resblock: 2
+resblock_dilation_sizes:
+- - 1
+  - 2
+- - 2
+  - 6
+- - 3
+  - 12
+resblock_kernel_sizes:
+- 3
+- 5
+- 7
+sample_rate: 22050
+segment_size: 8192
+upsample_initial_channel: 256
+upsample_kernel_sizes:
+- 16
+- 16
+- 8
+upsample_rates:
+- 8
+- 8
+- 4
+use_sdp: true
+use_spectral_norm: false
+vocoder_warmstart_ckpt: /home/tidospecht/.cache/huggingface/hub/datasets--rhasspy--piper-checkpoints/snapshots/6ac7f93d4d7c65eca5826462a5f6cb2b3627f967/de/de_DE/thorsten/medium/epoch=3135-step=2702056.ckpt
+warmup_epochs: 0
+win_length: 1024
