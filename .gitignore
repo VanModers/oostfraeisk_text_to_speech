@@ -5,3 +5,4 @@ piper_training_multi/
 piper_training_single_logs/
 piper_training_multi_logs/
 __pycache__/
+piper_log_exports/
