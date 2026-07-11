@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import unicodedata
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -56,6 +57,7 @@ def apply_patches() -> None:
     piper_dir = Path(piper.__file__).resolve().parent
     dataset_py = piper_dir / "train" / "vits" / "dataset.py"
     export_py = piper_dir / "train" / "export_onnx.py"
+    lightning_py = piper_dir / "train" / "vits" / "lightning.py"
 
     if not dataset_py.exists():
         raise FileNotFoundError(f"Piper training source not found: {dataset_py}")
@@ -93,6 +95,32 @@ def apply_patches() -> None:
         log.info("Patched export_onnx.py: using legacy TorchScript exporter")
     else:
         log.info("export_onnx.py already patched")
+
+    # Bug 3: Piper logs every test utterance as audio after every epoch. This
+    # makes long TensorBoard event files several gigabytes large.
+    AUDIO_MARKER = "# PATCH-SPARSE-AUDIO-LOGGING"
+    src = lightning_py.read_text()
+    if AUDIO_MARKER not in src:
+        if "import os\n" not in src:
+            src = src.replace("import ast\n", "import ast\nimport os\n", 1)
+        target = (
+            "        if self.trainer.sanity_checking:\n"
+            "            return super().on_validation_end()\n"
+        )
+        replacement = target + (
+            "\n"
+            f"        {AUDIO_MARKER}\n"
+            "        audio_every = max(1, int(os.environ.get(\"PIPER_AUDIO_LOG_EVERY\", \"25\")))\n"
+            "        is_last_epoch = self.current_epoch == (self.trainer.max_epochs - 1)\n"
+            "        if (self.current_epoch % audio_every != 0) and not is_last_epoch:\n"
+            "            return super().on_validation_end()\n"
+        )
+        if target not in src:
+            raise RuntimeError("Could not patch Piper audio logging frequency")
+        lightning_py.write_text(src.replace(target, replacement, 1))
+        log.info("Patched lightning.py: sparse validation audio logging")
+    else:
+        log.info("lightning.py audio logging already patched")
 
 
 def download_pretrained_ckpt() -> str:
@@ -238,6 +266,62 @@ def validate_metadata(metadata_path: Path, *, multispeaker: bool = False) -> Non
         log.info("Validated %s: %d utterances", metadata_path, len(rows))
 
 
+def build_callbacks(
+    checkpoint_every: int,
+    save_top_k: int,
+    early_stopping_patience: int,
+) -> list[dict]:
+    """Build LightningCLI callback configuration for a comparable long run."""
+    callbacks = [
+        {
+            "class_path": "piper_training_callbacks.ManualLRSchedulerStep",
+            "init_args": {},
+        },
+        {
+            "class_path": "lightning.pytorch.callbacks.ModelCheckpoint",
+            "init_args": {
+                "monitor": "val_loss",
+                "mode": "min",
+                "save_top_k": save_top_k,
+                "save_last": True,
+                "save_weights_only": False,
+                "filename": "best-epoch={epoch:04d}-val_loss={val_loss:.4f}",
+                "auto_insert_metric_name": False,
+            },
+        },
+    ]
+
+    if checkpoint_every > 0:
+        callbacks.append(
+            {
+                "class_path": "lightning.pytorch.callbacks.ModelCheckpoint",
+                "init_args": {
+                    "monitor": None,
+                    "save_top_k": -1,
+                    "save_weights_only": True,
+                    "every_n_epochs": checkpoint_every,
+                    "filename": "periodic-epoch={epoch:04d}",
+                    "auto_insert_metric_name": False,
+                },
+            }
+        )
+
+    if early_stopping_patience > 0:
+        callbacks.append(
+            {
+                "class_path": "lightning.pytorch.callbacks.EarlyStopping",
+                "init_args": {
+                    "monitor": "val_loss",
+                    "mode": "min",
+                    "patience": early_stopping_patience,
+                    "check_finite": True,
+                },
+            }
+        )
+
+    return callbacks
+
+
 def run_training(
     metadata_path: Path,
     training_dir:  Path,
@@ -248,6 +332,10 @@ def run_training(
     batch_size:    int,
     max_epochs:    int,
     num_workers:   int,
+    checkpoint_every: int,
+    save_top_k: int,
+    early_stopping_patience: int,
+    audio_log_every: int,
     num_speakers:  int = 1,
 ) -> None:
     """Run `python -m piper.train fit` with the given settings."""
@@ -278,6 +366,13 @@ def run_training(
         "--trainer.devices",            "1",
         "--trainer.precision",          "32",
         "--trainer.default_root_dir",   str(logs_dir),
+        "--trainer.callbacks", json.dumps(
+            build_callbacks(
+                checkpoint_every,
+                save_top_k,
+                early_stopping_patience,
+            )
+        ),
         "--data.phoneme_type",          "text",
         "--data.phonemes_path",         str(phonemes_path),
         "--data.num_symbols",           str(num_symbols),
@@ -286,12 +381,14 @@ def run_training(
     ]
 
     log.info("Starting training  (num_speakers=%d, max_epochs=%d) ...", num_speakers, max_epochs)
-    subprocess.run(cmd, check=True)
+    env = os.environ.copy()
+    env["PIPER_AUDIO_LOG_EVERY"] = str(audio_log_every)
+    subprocess.run(cmd, check=True, env=env)
     log.info("Training complete!")
 
 
-def find_best_checkpoint(logs_dir: Path) -> Optional[Path]:
-    """Find the best checkpoint from the most recent training run."""
+def find_latest_run_dir(logs_dir: Path) -> Optional[Path]:
+    """Return the most recently modified Lightning version directory."""
     version_dirs = [
         Path(path)
         for pattern in (
@@ -306,17 +403,51 @@ def find_best_checkpoint(logs_dir: Path) -> Optional[Path]:
         log.error("No Lightning runs found under %s", logs_dir)
         return None
 
-    latest_version_dir = max(version_dirs, key=lambda path: path.stat().st_mtime)
-    ckpts = sorted(latest_version_dir.glob("checkpoints/*.ckpt"))
+    return max(version_dirs, key=lambda path: path.stat().st_mtime)
+
+
+def list_run_checkpoints(logs_dir: Path) -> Tuple[Optional[Path], list[Path]]:
+    """List checkpoints belonging only to the most recent Lightning run."""
+    latest_version_dir = find_latest_run_dir(logs_dir)
+    if latest_version_dir is None:
+        return None, []
+
+    ckpts = sorted(
+        latest_version_dir.glob("checkpoints/*.ckpt"),
+        key=lambda path: (checkpoint_epoch(path), path.name),
+    )
+    return latest_version_dir, ckpts
+
+
+def checkpoint_epoch(checkpoint: Path) -> int:
+    """Extract an epoch number for chronological checkpoint sorting."""
+    match = re.search(r"epoch[=-](\d+)", checkpoint.name)
+    return int(match.group(1)) if match else sys.maxsize
+
+
+def find_checkpoint(logs_dir: Path, selection: str) -> Optional[Path]:
+    """Find the requested checkpoint from the most recent training run."""
+    latest_version_dir, ckpts = list_run_checkpoints(logs_dir)
+    if latest_version_dir is None:
+        return None
 
     if not ckpts:
         log.error("No checkpoints found in latest run %s", latest_version_dir)
         return None
 
+    if selection == "last":
+        last_ckpt = latest_version_dir / "checkpoints" / "last.ckpt"
+        if last_ckpt.is_file():
+            log.info("Using final checkpoint: %s", last_ckpt)
+            return last_ckpt
+        latest_ckpt = max(ckpts, key=lambda path: path.stat().st_mtime)
+        log.info("No last.ckpt found; using newest checkpoint: %s", latest_ckpt)
+        return latest_ckpt
+
     best_ckpt   = None
     best_loss   = float("inf")
     for ckpt in ckpts:
-        m = re.search(r"val_loss=([\d.]+)", str(ckpt))
+        m = re.search(r"val_loss=([0-9]+(?:\.[0-9]+)?)", str(ckpt))
         if m:
             loss = float(m.group(1))
             if loss < best_loss:
@@ -332,8 +463,30 @@ def find_best_checkpoint(logs_dir: Path) -> Optional[Path]:
     return best_ckpt
 
 
+def backup_existing_model(output_dir: Path) -> None:
+    """Preserve an existing ONNX model before a new export overwrites it."""
+    existing = [
+        path
+        for path in (
+            output_dir / "oostfraeisk.onnx",
+            output_dir / "oostfraeisk.onnx.json",
+        )
+        if path.is_file()
+    ]
+    if not existing:
+        return
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_dir = output_dir / "archive" / timestamp
+    backup_dir.mkdir(parents=True, exist_ok=False)
+    for path in existing:
+        shutil.copy2(path, backup_dir / path.name)
+    log.info("Backed up existing model to %s", backup_dir)
+
+
 def export_single_speaker(checkpoint: Path, output_dir: Path, config_src: Path) -> None:
     """Export a single-speaker ONNX model via piper.train.export_onnx."""
+    backup_existing_model(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     onnx_path = output_dir / "oostfraeisk.onnx"
 
@@ -378,6 +531,7 @@ def export_multi_averaged(checkpoint: Path, output_dir: Path, config_src: Path) 
         log.error("Cannot import VitsModel — is piper1-gpl installed?")
         return
 
+    backup_existing_model(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     onnx_path = output_dir / "oostfraeisk.onnx"
 
@@ -510,6 +664,67 @@ def synthesize_test_sentences(model_dir: Path, label: str) -> None:
     log.info("Test inference complete for [%s]. WAVs saved in %s/", label, model_dir)
 
 
+def generate_checkpoint_comparisons(
+    logs_dir: Path,
+    model_dir: Path,
+    config_src: Path,
+    *,
+    multispeaker: bool,
+) -> None:
+    """Export and synthesize examples for every checkpoint in the latest run."""
+    run_dir, checkpoints = list_run_checkpoints(logs_dir)
+    if run_dir is None or not checkpoints:
+        log.warning("No checkpoints available for comparison under %s", logs_dir)
+        return
+
+    comparison_root = model_dir / "checkpoint_comparisons" / run_dir.name
+    comparison_root.mkdir(parents=True, exist_ok=True)
+    index = []
+
+    log.info(
+        "Generating comparison models and examples for %d checkpoint(s)...",
+        len(checkpoints),
+    )
+    for checkpoint_number, checkpoint in enumerate(checkpoints, start=1):
+        checkpoint_name = re.sub(r"[^A-Za-z0-9_.=-]+", "_", checkpoint.stem)
+        output_dir = comparison_root / checkpoint_name
+        log.info(
+            "Checkpoint comparison %d/%d: %s",
+            checkpoint_number,
+            len(checkpoints),
+            checkpoint.name,
+        )
+
+        if multispeaker:
+            export_multi_averaged(checkpoint, output_dir, config_src)
+        else:
+            export_single_speaker(checkpoint, output_dir, config_src)
+
+        onnx_path = output_dir / "oostfraeisk.onnx"
+        exported = onnx_path.is_file()
+        if exported:
+            synthesize_test_sentences(output_dir, "comparison")
+
+        index.append(
+            {
+                "checkpoint": str(checkpoint.resolve()),
+                "checkpoint_name": checkpoint.name,
+                "epoch": (
+                    checkpoint_epoch(checkpoint)
+                    if checkpoint_epoch(checkpoint) != sys.maxsize
+                    else None
+                ),
+                "output_directory": str(output_dir.resolve()),
+                "exported": exported,
+            }
+        )
+
+    index_path = comparison_root / "index.json"
+    with open(index_path, "w", encoding="utf-8") as index_file:
+        json.dump(index, index_file, ensure_ascii=False, indent=2)
+    log.info("Checkpoint comparison index → %s", index_path)
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -528,6 +743,26 @@ def main() -> None:
         help="Data-loader worker processes (0 is the safest setting)",
     )
     parser.add_argument(
+        "--checkpoint-every", type=int, default=250,
+        help="Save a weights-only listening checkpoint every N epochs (0 disables)",
+    )
+    parser.add_argument(
+        "--save-top-k", type=int, default=3,
+        help="Keep this many full checkpoints with the lowest val_loss",
+    )
+    parser.add_argument(
+        "--early-stopping-patience", type=int, default=0,
+        help="Stop after N unimproved validation epochs (0 disables)",
+    )
+    parser.add_argument(
+        "--audio-log-every", type=int, default=25,
+        help="Log TensorBoard example audio every N epochs",
+    )
+    parser.add_argument(
+        "--checkpoint-selection", choices=["last", "best"], default="last",
+        help="Checkpoint exported after training; periodic checkpoints remain available",
+    )
+    parser.add_argument(
         "--pretrained-ckpt", type=str, default=None,
         help="Path to pretrained .ckpt (auto-downloaded if omitted)",
     )
@@ -539,7 +774,23 @@ def main() -> None:
         "--skip-inference", action="store_true",
         help="Skip test-sentence synthesis after export",
     )
+    parser.add_argument(
+        "--skip-export", action="store_true",
+        help="Train and save checkpoints without exporting/overwriting the ONNX model",
+    )
+    parser.add_argument(
+        "--skip-checkpoint-samples", action="store_true",
+        help="Do not export and synthesize examples for every saved checkpoint",
+    )
     args = parser.parse_args()
+    if args.checkpoint_every < 0:
+        parser.error("--checkpoint-every cannot be negative")
+    if args.save_top_k < 1:
+        parser.error("--save-top-k must be at least 1")
+    if args.early_stopping_patience < 0:
+        parser.error("--early-stopping-patience cannot be negative")
+    if args.audio_log_every < 1:
+        parser.error("--audio-log-every must be at least 1")
 
     # Sanity-check working directory
     if not DATASET_DIR.exists():
@@ -586,17 +837,32 @@ def main() -> None:
             batch_size     = args.batch_size,
             max_epochs     = args.max_epochs,
             num_workers    = args.num_workers,
+            checkpoint_every = args.checkpoint_every,
+            save_top_k     = args.save_top_k,
+            early_stopping_patience = args.early_stopping_patience,
+            audio_log_every = args.audio_log_every,
             num_speakers   = 1,
         )
-        best = find_best_checkpoint(logs_dir)
-        if best:
+        selected = (
+            None
+            if args.skip_export
+            else find_checkpoint(logs_dir, args.checkpoint_selection)
+        )
+        if selected:
             export_single_speaker(
-                best,
+                selected,
                 Path("model_piper"),
                 shared_training_dir / "config.json",
             )
             if not args.skip_inference:
                 synthesize_test_sentences(Path("model_piper"), "single")
+                if not args.skip_checkpoint_samples:
+                    generate_checkpoint_comparisons(
+                        logs_dir,
+                        Path("model_piper"),
+                        shared_training_dir / "config.json",
+                        multispeaker=False,
+                    )
 
     # ── Multi-speaker ─────────────────────────────────────────────────────────
     if run_multi:
@@ -616,17 +882,32 @@ def main() -> None:
             batch_size     = args.batch_size,
             max_epochs     = args.max_epochs,
             num_workers    = args.num_workers,
+            checkpoint_every = args.checkpoint_every,
+            save_top_k     = args.save_top_k,
+            early_stopping_patience = args.early_stopping_patience,
+            audio_log_every = args.audio_log_every,
             num_speakers   = 2,
         )
-        best_m = find_best_checkpoint(logs_dir_m)
-        if best_m:
+        selected_m = (
+            None
+            if args.skip_export
+            else find_checkpoint(logs_dir_m, args.checkpoint_selection)
+        )
+        if selected_m:
             export_multi_averaged(
-                best_m,
+                selected_m,
                 Path("model_piper_multi"),
                 training_dir_m / "config.json",
             )
             if not args.skip_inference:
                 synthesize_test_sentences(Path("model_piper_multi"), "multi")
+                if not args.skip_checkpoint_samples:
+                    generate_checkpoint_comparisons(
+                        logs_dir_m,
+                        Path("model_piper_multi"),
+                        training_dir_m / "config.json",
+                        multispeaker=True,
+                    )
 
 
 if __name__ == "__main__":
