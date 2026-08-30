@@ -6,3 +6,7 @@ piper_training_single_logs/
 piper_training_multi_logs/
 __pycache__/
 piper_log_exports/
+model_piper/archive/
+model_piper_multi/archive/
+model_piper/checkpoint_comparisons/
+model_piper_multi/checkpoint_comparisons/
