@@ -18,6 +18,7 @@ os.environ.setdefault("NO_TORCH_COMPILE", "1")
 
 AIGC_CHUNK_ID = b"aigc"
 PROVENANCE_VERSION = 1
+LANGUAGE_CODE = "frs"
 DEFAULT_MESSAGE_BITS = "0100010101000110"  # ASCII "EF"
 _AUDIOSEAL_SAMPLE_RATE = 16_000
 _generator = None
@@ -37,6 +38,7 @@ def _provenance_payload(watermark_applied: bool) -> dict[str, Any]:
         "schema": "org.oostfraeisk.ai-audio-provenance",
         "version": PROVENANCE_VERSION,
         "ai_generated": True,
+        "language": LANGUAGE_CODE,
         "generator": "Piper TTS",
         "model": os.environ.get(
             "MODEL_REPO_ID", "VanModers114/East_Frisian_TTS"
@@ -59,7 +61,9 @@ def append_wav_provenance(path: str | Path, watermark_applied: bool) -> None:
         separators=(",", ":"),
     ).encode("utf-8")
     info_text = (
-        b"AI-generated speech; generator=Piper TTS; "
+        f"AI-generated speech; language={LANGUAGE_CODE}; generator=Piper TTS; ".encode(
+            "ascii"
+        )
         + (b"watermark=AudioSeal" if watermark_applied else b"watermark=none")
         + b"\x00"
     )
