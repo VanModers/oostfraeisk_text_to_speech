@@ -20,6 +20,11 @@ AIGC_CHUNK_ID = b"aigc"
 PROVENANCE_VERSION = 1
 LANGUAGE_CODE = "frs"
 DEFAULT_MESSAGE_BITS = "0100010101000110"  # ASCII "EF"
+HUMAN_READABLE_TITLE = "AI-generated speech"
+HUMAN_READABLE_NOTICE = (
+    "AI-generated audio created by Ooversetter on oostfraeisk.org using Piper TTS. "
+    "Contains an AudioSeal watermark."
+)
 _AUDIOSEAL_SAMPLE_RATE = 16_000
 _generator = None
 _detector = None
@@ -60,14 +65,15 @@ def append_wav_provenance(path: str | Path, watermark_applied: bool) -> None:
         ensure_ascii=False,
         separators=(",", ":"),
     ).encode("utf-8")
-    info_text = (
-        f"AI-generated speech; language={LANGUAGE_CODE}; generator=Piper TTS; ".encode(
-            "ascii"
-        )
-        + (b"watermark=AudioSeal" if watermark_applied else b"watermark=none")
-        + b"\x00"
+    title = HUMAN_READABLE_TITLE.encode("ascii") + b"\x00"
+    notice = HUMAN_READABLE_NOTICE.encode("ascii") + b"\x00"
+    software = b"Ooversetter / Piper TTS\x00"
+    list_payload = (
+        b"INFO"
+        + _chunk(b"INAM", title)
+        + _chunk(b"ICMT", notice)
+        + _chunk(b"ISFT", software)
     )
-    list_payload = b"INFO" + _chunk(b"ICMT", info_text)
 
     with wav_path.open("r+b") as wav_file:
         header = wav_file.read(12)
