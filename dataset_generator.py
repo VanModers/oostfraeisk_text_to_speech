@@ -114,6 +114,8 @@ def main():
         print(f"Verwende Mikrofon [{device}]: {sd.query_devices(device)['name']}")
 
     speaker_id = input(f"Sprecher-ID eingeben (ENTER für {DEFAULT_SPEAKER_ID}): ").strip() or DEFAULT_SPEAKER_ID
+    if speaker_id.isdigit():
+        speaker_id = f"speaker_{speaker_id}"
 
     metadata_path = os.path.join(OUTPUT_DIR, "metadata.csv")
     multispeaker_path = os.path.join(OUTPUT_DIR, "metadata_multispeaker.csv")
