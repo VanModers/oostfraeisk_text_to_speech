@@ -4,6 +4,7 @@ import string
 
 # -------- CONFIG --------
 METADATA_PATH = "data/oostfraeisk/metadata.csv"
+METADATA_MULTISPEAKER_PATH = "data/oostfraeisk/metadata_multispeaker.csv"
 DICT_PATH = "frs.dic"
 # -------------------------
 
@@ -65,6 +66,23 @@ def save_metadata(metadata_path, entries):
     with open(metadata_path, "w", encoding="utf-8") as f:
         for entry in entries:
             f.write("|".join(entry) + "\n")
+
+
+def sync_multispeaker(multispeaker_path, entries):
+    """Copy the corrected texts from entries into metadata_multispeaker.csv (format: id|speaker|text)."""
+    if not os.path.exists(multispeaker_path):
+        return
+    texts = {entry[0]: entry[1] for entry in entries}
+    lines = []
+    with open(multispeaker_path, "r", encoding="utf-8") as f:
+        for line in f:
+            parts = line.rstrip("\n").split("|")
+            if len(parts) >= 3 and parts[0] in texts:
+                parts[2] = texts[parts[0]]
+            lines.append("|".join(parts))
+    with open(multispeaker_path, "w", encoding="utf-8") as f:
+        for line in lines:
+            f.write(line + "\n")
 
 
 def main():
@@ -162,6 +180,7 @@ def main():
 
         # Save after each modification
         save_metadata(METADATA_PATH, entries)
+        sync_multispeaker(METADATA_MULTISPEAKER_PATH, entries)
         save_dictionary(DICT_PATH, dictionary)
 
     print("\n" + "=" * 50)
